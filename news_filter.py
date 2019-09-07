@@ -4,17 +4,19 @@ from tkinter import *
 from tkinter import messagebox
 import webbrowser
 
-CNN_URL = r"https://edition.cnn.com"
-CHROME_PATH = "C:/Users/LG/Downloads/chromedriver.exe"
+NEWS_channel = ""
+NEWS_URL = r""
+CHROME_PATH = "C:/Users/com/Downloads/chromedriver.exe"
+
 
 def display_result(link_url_list, headline_text_list):
     result_window = Tk()
     result_window.title("Filter result")
-    result_window.geometry("800x800")
+    result_window.geometry("1000x800")
     canvas = Canvas(result_window)
     ver_bar = Scrollbar(result_window, orient='vertical', command=canvas.yview)
     hor_bar = Scrollbar(result_window, orient='horizontal', command=canvas.xview)
-    #ver_bar.config(command=canvas.yview) also possible
+    # ver_bar.config(command=canvas.yview) also possible
     hyperlink_id_list = []
 
     for i in range(len(headline_text_list)):
@@ -22,21 +24,29 @@ def display_result(link_url_list, headline_text_list):
         article_url = link_url_list[i]
         hyperlink.bind("<Button-1>", lambda event, article_url=article_url: webbrowser.open(article_url))
         hyperlink.pack()
-        id = canvas.create_window((0, i * 30), anchor='center', window=hyperlink, height=20)
+        id = canvas.create_window((0, i * 40), anchor='center', window=hyperlink, height=30)
         hyperlink_id_list.append(id)
+
+    # this "dummy_window" is required because without it,
+    # the last headline is covered by the horizontal scrollbar
+    dummy_window = Label(canvas, text=" ", font="Helvetica 10 bold")
+    dummy_window.pack()
+    dummy_id = canvas.create_window((0, len(headline_text_list) * 40), anchor='center', window=dummy_window, height=30)
+    hyperlink_id_list.append(dummy_id)
+
     canvas.configure(scrollregion=canvas.bbox('all'), yscrollcommand=ver_bar.set)
     canvas.configure(scrollregion=canvas.bbox('all'), xscrollcommand=hor_bar.set)
 
     result_window.grid_columnconfigure(0, weight=1)
     result_window.grid_columnconfigure(1, weight=1)
     result_window.grid_columnconfigure(2, weight=1)
-    #column 3 will be left alone to avoid the canvas not being in the center
+    # column 3 will be left alone to avoid the canvas not being in the center
     result_window.grid_rowconfigure(0, weight=1)
     result_window.grid_rowconfigure(1, weight=1)
 
     canvas.grid(row=0, column=1, columnspan=3, rowspan=2, sticky="nsew")
-    hor_bar.grid(row=1, column=0, columnspan=4, sticky=E+W+S)
-    ver_bar.grid(row=0, column=3, rowspan=2, sticky=N+S+E)
+    hor_bar.grid(row=1, column=0, columnspan=4, sticky=E + W + S)
+    ver_bar.grid(row=0, column=3, rowspan=2, sticky=N + S + E)
 
     def _on_mousewheel(event):
         canvas.yview_scroll(-1 * int(event.delta / 100), "units")
@@ -55,31 +65,62 @@ def scan_headline_text(headline_text, filter_tuple):
     return match_result
 
 
+def extract_tag_from_fox(main_soup):
+    headline_container = []
+
+    for i in range(19):
+        temp = main_soup.find_all(class_=("article story-" + str(i)))
+        for k in range(len(temp)):
+            headline_container.append(temp[k])
+
+    return headline_container
+
+
 def extract_article_urls(filter_tuple):
     driver = webdriver.Chrome(executable_path=CHROME_PATH)
-    driver.get(CNN_URL)
+    driver.get(NEWS_URL)
     html = driver.page_source
     main_soup = BeautifulSoup(html, 'html.parser')
-    cd__headline_containers = main_soup.find_all(class_="cd__headline")
+    headline_container = None
+    if NEWS_channel == "CNN":
+        headline_container = main_soup.find_all(class_="cd__headline")
+    elif NEWS_channel == "FOX":
+        headline_container = extract_tag_from_fox(main_soup)
+    else:
+        assert False
+
     driver.close()
 
     link_url_list = []
     headline_text_list = []
     no_of_headlines_filtered = 0
 
-    for i in range(len(cd__headline_containers)):
-        first_headline = cd__headline_containers[i]
-
-        headline_text = first_headline.find(class_="cd__headline-text").text
+    for i in range(len(headline_container)):
+        current_headline = headline_container[i]
+        if NEWS_channel == "CNN":
+            headline_text = current_headline.find(class_="cd__headline-text").text
+        elif NEWS_channel == "FOX":
+            headline_text = current_headline.find(class_="title").a.text
+        else:
+            assert False
 
         match_result = scan_headline_text(headline_text, filter_tuple)
         if len(match_result) == 0:
             headline_text_list.append(headline_text)
             print("Headline: " + headline_text)
-            href_obj = first_headline.a["href"]
+
+            if NEWS_channel == "CNN":
+                href_obj = current_headline.a["href"]
+            elif NEWS_channel == "FOX":
+                href_obj = current_headline.find(class_="title").a["href"]
+            else:
+                assert False
+
             link_url = href_obj
-            link_url_list.append(CNN_URL + link_url)
-            print("Link: " + CNN_URL + link_url)
+            if NEWS_channel == "CNN":
+                link_url = r"https://edition.cnn.com" + link_url
+            link_url_list.append(link_url)
+            print("Link: " + link_url)
         else:
             print("Filtered a headline with the word(s):", end="")
             for k in range(len(match_result)):
@@ -90,7 +131,8 @@ def extract_article_urls(filter_tuple):
 
     root = Tk()
     root.withdraw()
-    messagebox.showinfo("Filtering complete", "A total number of " + str(no_of_headlines_filtered) + " article(s) were filtered.")
+    messagebox.showinfo("Filtering complete",
+                        "A total number of " + str(no_of_headlines_filtered) + " article(s) were filtered.")
     root.destroy()
     display_result(link_url_list, headline_text_list)
 
@@ -166,7 +208,8 @@ def display_word_removal_screen(confirm_window, filter_tuple):
     L2 = Label(top_frame, text="Words to filter out:", font="Helvetica 10 bold")
     E1 = Entry(top_frame, bd=5, width=35)
     remove_button = Button(top_frame, text="Remove", command=lambda: remove(E1, filter_list))
-    next_button = Button(bottom_frame, text="Next", command=lambda: display_confirm_screen(word_removal_window, filter_list.get(0, END)), width=10)
+    next_button = Button(bottom_frame, text="Next",
+                         command=lambda: display_confirm_screen(word_removal_window, filter_list.get(0, END)), width=10)
 
     L1.pack(side=TOP)
     L2.pack(side=LEFT)
@@ -211,9 +254,12 @@ def display_confirm_screen(word_addition_window, filter_tuple):
     filter_list.pack(side=LEFT, fill=BOTH)
     scrollbar.config(command=filter_list.yview)
 
-    yes_button = Button(bottom_frame, text="Proceed to filtering", command=lambda: begin_filtering(confirm_window, filter_tuple), width=17)
-    no_button_remove = Button(bottom_frame, text="Remove items", command=lambda: display_word_removal_screen(confirm_window, filter_tuple), width=17)
-    no_button_add = Button(bottom_frame, text="Add items", command=lambda: display_word_addition_screen(confirm_window, filter_tuple), width=17)
+    yes_button = Button(bottom_frame, text="Proceed to filtering",
+                        command=lambda: begin_filtering(confirm_window, filter_tuple), width=17)
+    no_button_remove = Button(bottom_frame, text="Remove items",
+                              command=lambda: display_word_removal_screen(confirm_window, filter_tuple), width=17)
+    no_button_add = Button(bottom_frame, text="Add items",
+                           command=lambda: display_word_addition_screen(confirm_window, filter_tuple), width=17)
 
     no_button_remove.pack(side=LEFT)
     no_button_add.pack(side=LEFT)
@@ -255,7 +301,9 @@ def display_word_addition_screen_helper(filter_tuple):
     L2 = Label(top_frame, text="Words to filter out:", font="Helvetica 10 bold")
     E1 = Entry(top_frame, bd=5, width=35)
     submit_button = Button(top_frame, text="Submit", command=lambda: submit(E1, filter_list))
-    next_button = Button(bottom_frame, text="Next", command=lambda: display_confirm_screen(word_addition_window, filter_list.get(0, END)), width=10)
+    next_button = Button(bottom_frame, text="Next",
+                         command=lambda: display_confirm_screen(word_addition_window, filter_list.get(0, END)),
+                         width=10)
 
     L1.pack(side=TOP)
     L2.pack(side=LEFT)
@@ -271,6 +319,53 @@ def display_word_addition_screen_helper(filter_tuple):
     word_addition_window.mainloop()
 
 
+def cnn_selected(news_channel_selection_window, filter_tuple):
+    news_channel_selection_window.destroy()
+    global NEWS_channel
+    global NEWS_URL
+
+    NEWS_channel = "CNN"
+    NEWS_URL = r"https://edition.cnn.com"
+    display_word_addition_screen_helper(filter_tuple)
+
+
+def fox_selected(news_channel_selection_window, filter_tuple):
+    news_channel_selection_window.destroy()
+    global NEWS_channel
+    global NEWS_URL
+
+    NEWS_channel = "FOX"
+    NEWS_URL = r"https://www.foxnews.com"
+    display_word_addition_screen_helper(filter_tuple)
+
+
+def news_channel_selection(filter_tuple):
+    news_channel_selection_window = Tk()
+
+    news_channel_selection_window.geometry("300x300")
+    news_channel_selection_window.title("News channel selection")
+
+    top_frame = Frame(news_channel_selection_window)
+    middle_frame = Frame(news_channel_selection_window)
+
+    top_frame.pack(side=TOP)
+    middle_frame.pack(side=TOP)
+
+    L1 = Label(top_frame, text="\n Please select your news channel.\n", font="Helvetica 12 bold")
+    L1.pack(side=TOP)
+
+    CNN_button = Button(middle_frame, text="CNN", command=lambda: cnn_selected(news_channel_selection_window, filter_tuple), width=17, height=2)
+    FOX_button = Button(middle_frame, text="FOX", command=lambda: fox_selected(news_channel_selection_window, filter_tuple), width=17, height=2)
+
+    blank_line = Label(middle_frame, text='\n', height=1)
+    CNN_button.pack(side=TOP)
+    blank_line.pack(side=TOP)
+    FOX_button.pack(side=TOP)
+
+    news_channel_selection_window.resizable(width=False, height=False)
+    news_channel_selection_window.mainloop()
+
+
 def display_word_addition_screen(confirm_window, filter_tuple):
     confirm_window.destroy()
     display_word_addition_screen_helper(filter_tuple)
@@ -278,6 +373,6 @@ def display_word_addition_screen(confirm_window, filter_tuple):
 
 ###########################main###########################
 filter_tuple = tuple()
-display_word_addition_screen_helper(filter_tuple)
+news_channel_selection(filter_tuple)
 
 print("Program ended")
