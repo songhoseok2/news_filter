@@ -2,11 +2,14 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from tkinter import *
 from tkinter import messagebox
+from tkinter import filedialog
+import os
 import webbrowser
 
 NEWS_channel = ""
 NEWS_URL = r""
-CHROME_PATH = "C:/Users/com/Downloads/chromedriver.exe"
+BROWSER = r""
+BROWSER_PATH = r""
 
 
 def display_result(link_url_list, headline_text_list):
@@ -77,7 +80,11 @@ def extract_tag_from_fox(main_soup):
 
 
 def extract_article_urls(filter_tuple):
-    driver = webdriver.Chrome(executable_path=CHROME_PATH)
+    print("BROWSER: " + BROWSER)
+    if BROWSER == "CHROME":
+        driver = webdriver.Chrome(executable_path=BROWSER_PATH)
+    else:
+        driver = webdriver.Firefox(executable_path=BROWSER_PATH)
     driver.get(NEWS_URL)
     html = driver.page_source
     main_soup = BeautifulSoup(html, 'html.parser')
@@ -106,16 +113,20 @@ def extract_article_urls(filter_tuple):
 
         match_result = scan_headline_text(headline_text, filter_tuple)
         if len(match_result) == 0:
+            try:
+                if NEWS_channel == "CNN":
+                    #CNN features a live screen with no headline text but has the class cd__headline.
+                    #This needs to be skipped.
+                    href_obj = current_headline.a["href"]
+                elif NEWS_channel == "FOX":
+                    href_obj = current_headline.find(class_="title").a["href"]
+                else:
+                    assert False
+            except:
+                print("unable to find url for: " + headline_text)
+                continue
             headline_text_list.append(headline_text)
             print("Headline: " + headline_text)
-
-            if NEWS_channel == "CNN":
-                href_obj = current_headline.a["href"]
-            elif NEWS_channel == "FOX":
-                href_obj = current_headline.find(class_="title").a["href"]
-            else:
-                assert False
-
             link_url = href_obj
             if NEWS_channel == "CNN":
                 link_url = r"https://edition.cnn.com" + link_url
@@ -339,9 +350,10 @@ def fox_selected(news_channel_selection_window, filter_tuple):
     display_word_addition_screen_helper(filter_tuple)
 
 
-def news_channel_selection(filter_tuple):
-    news_channel_selection_window = Tk()
+def news_channel_selection(web_browser_selection_window, filter_tuple):
+    web_browser_selection_window.destroy()
 
+    news_channel_selection_window = Tk()
     news_channel_selection_window.geometry("300x300")
     news_channel_selection_window.title("News channel selection")
 
@@ -354,8 +366,10 @@ def news_channel_selection(filter_tuple):
     L1 = Label(top_frame, text="\n Please select your news channel.\n", font="Helvetica 12 bold")
     L1.pack(side=TOP)
 
-    CNN_button = Button(middle_frame, text="CNN", command=lambda: cnn_selected(news_channel_selection_window, filter_tuple), width=17, height=2)
-    FOX_button = Button(middle_frame, text="FOX", command=lambda: fox_selected(news_channel_selection_window, filter_tuple), width=17, height=2)
+    CNN_button = Button(middle_frame, text="CNN",
+                        command=lambda: cnn_selected(news_channel_selection_window, filter_tuple), width=17, height=2)
+    FOX_button = Button(middle_frame, text="FOX",
+                        command=lambda: fox_selected(news_channel_selection_window, filter_tuple), width=17, height=2)
 
     blank_line = Label(middle_frame, text='\n', height=1)
     CNN_button.pack(side=TOP)
@@ -370,9 +384,46 @@ def display_word_addition_screen(confirm_window, filter_tuple):
     confirm_window.destroy()
     display_word_addition_screen_helper(filter_tuple)
 
+def request_web_driver_path(web_browser_selection_window, browser, filter_tuple):
+    global BROWSER
+    BROWSER= browser
+    currdir = os.getcwd()
+    global BROWSER_PATH
+    BROWSER_PATH = filedialog.askopenfilename(parent=web_browser_selection_window, initialdir=currdir, title="Please select the browser's driver.")
+    if len(BROWSER_PATH) > 0:
+        print("You chose %s" % BROWSER_PATH)
+        news_channel_selection(web_browser_selection_window, filter_tuple)
+
+
+def web_browser_selection(filter_tuple):
+    web_browser_selection_window = Tk()
+    web_browser_selection_window.geometry("300x300")
+    web_browser_selection_window.title("Web Browser selection")
+
+    top_frame = Frame(web_browser_selection_window)
+    middle_frame = Frame(web_browser_selection_window)
+
+    top_frame.pack(side=TOP)
+    middle_frame.pack(side=TOP)
+
+    L1 = Label(top_frame, text="\n Please select your Web Browser.\n", font="Helvetica 12 bold")
+    L1.pack(side=TOP)
+
+    CHROME_button = Button(middle_frame, text="Google Chrome",
+                        command=lambda: request_web_driver_path(web_browser_selection_window, "CHROME", filter_tuple), width=17, height=2)
+    FIREFOX_button = Button(middle_frame, text="Mozilla Firefox",
+                        command=lambda: request_web_driver_path(web_browser_selection_window, "FIREFOX", filter_tuple), width=17, height=2)
+
+    blank_line = Label(middle_frame, text='\n', height=1)
+    CHROME_button.pack(side=TOP)
+    blank_line.pack(side=TOP)
+    FIREFOX_button.pack(side=TOP)
+
+    web_browser_selection_window.resizable(width=False, height=False)
+    web_browser_selection_window.mainloop()
 
 ###########################main###########################
 filter_tuple = tuple()
-news_channel_selection(filter_tuple)
+web_browser_selection(filter_tuple)
 
 print("Program ended")
